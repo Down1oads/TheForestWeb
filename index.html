@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head><script>
+(function () {
+  var realFetch = window.fetch.bind(window), manifest = null;
+  function getManifest() { return manifest || (manifest = realFetch('split-files.json').then(function (r) { return r.json(); })); }
+  var bigDone = 0, bigTotal = 0;
+  function progress(frac) { if (window.__tfProgress) window.__tfProgress(Math.min(0.97, frac)); }
+  window.fetch = function (input, init) {
+    var url = typeof input === 'string' ? input : (input && input.url) || '';
+    var clean = url.split('?')[0];
+    return getManifest().then(function (m) {
+      var key = Object.keys(m).filter(function (k) { return clean.slice(-k.length) === k; })[0];
+      if (!key) return realFetch(input, init);
+      var info = m[key], done = 0, total = info.size, ckey = 'https://forest.local/' + key + '/' + info.hash, cache = null;
+      var isWasm = key.slice(-5) === '.wasm';
+      var mime = isWasm ? 'application/wasm' : 'application/octet-stream';
+      function respond(blob) { return new Response(blob, { status: 200, headers: { 'Content-Length': String(blob.size), 'Content-Type': mime } }); }
+      function fetchParts() {
+        return Promise.all(info.parts.map(function (p) {
+          return realFetch(p).then(function (r) {
+            if (!r.ok) throw new Error('could not load ' + p);
+            return r.arrayBuffer();
+          }).then(function (b) { done += b.byteLength; progress(done / total); return b; });
+        })).then(function (bufs) {
+          var blob = new Blob(bufs, { type: mime });
+          if (cache) { cache.keys().then(function (ks) { ks.forEach(function (k) { if (k.url.indexOf('https://forest.local/' + key + '/') === 0) cache.delete(k); }); return cache.put(ckey, respond(blob)); }).catch(function () {}); }
+          return respond(blob);
+        });
+      }
+      if (!window.caches) return fetchParts();
+      return caches.open('forest-data').then(function (c) { cache = c; return c.match(ckey); }).then(function (hit) {
+        if (hit) { progress(1); return hit.blob().then(respond); }
+        return fetchParts();
+      }).catch(function () { return fetchParts(); });
+    });
+  };
+})();
+</script>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Unity Web Player | The Forest</title>
+    <link rel="shortcut icon" href="TemplateData/favicon.ico">
+    <link rel="stylesheet" href="TemplateData/style.css">
+  <script>window.__logs=[];window.__uniq={};window.__uniqOrder=[];['log','warn','error'].forEach(function(k){var o=console[k];console[k]=function(){try{var m=k+': '+Array.prototype.slice.call(arguments).join(' ').slice(0,900);if(window.__logs.length>=3000)window.__logs.shift();window.__logs.push(m);var key=m.slice(0,300);if(window.__uniq[key]){window.__uniq[key].n++}else{window.__uniq[key]={n:1,m:m};window.__uniqOrder.push(key)}}catch(e){}o.apply(console,arguments)}});window.addEventListener('error',function(e){try{window.__logs.push('uncaught: '+e.message)}catch(x){}});</script>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+#unity-container{position:fixed!important;inset:0;transform:none!important;left:0!important;top:0!important;width:100%!important;height:100%!important}
+#unity-canvas{width:100%!important;height:100%!important;display:block;background:#000}
+#unity-footer,#unity-loading-bar{display:none!important}
+#tf-load{position:fixed;inset:0;z-index:100;background:#050605;color:#e8c21a;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity .6s}
+#tf-load .t{font:800 clamp(40px,8vw,96px)/1 Impact,'Arial Black',sans-serif;letter-spacing:4px}
+#tf-load .t small{display:block;font-size:.36em;letter-spacing:10px;color:#cfd2c4;margin-bottom:6px}
+#tf-load .sub{font:600 15px/1.4 Arial,sans-serif;color:#7d8470;letter-spacing:3px;margin:16px 0 22px;text-transform:uppercase}
+#tf-load .bar{width:min(460px,80vw);height:10px;background:#1b1e18;overflow:hidden}
+#tf-load .fill{height:100%;width:0;background:#e8c21a;transition:width .2s}
+#tf-load .pct{font:700 16px/1 Arial,sans-serif;color:#cfd2c4;margin-top:12px}
+</style>
+<script>
+(function(){
+  var lock = Element.prototype.requestPointerLock;
+  if (lock) Element.prototype.requestPointerLock = function(){ try { var r = lock.apply(this, arguments); if (r && r.catch) r.catch(function(){}); return r; } catch (e) { return undefined; } };
+  window.addEventListener('beforeunload', function(e){ e.preventDefault(); e.returnValue = ''; return ''; });
+  function kl(){ try { if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['KeyW','KeyA','KeyS','KeyD','KeyQ','KeyE','KeyR','KeyT','KeyF','KeyC','KeyB','KeyI','KeyZ','KeyX','KeyV','KeyG','KeyH','KeyJ','KeyK','KeyL','KeyU','KeyY','KeyN','KeyM','KeyP','KeyO','Tab','Escape','ControlLeft','ControlRight']).catch(function(){}); } catch(e){} }
+  document.addEventListener('fullscreenchange', function(){ if (document.fullscreenElement) kl(); });
+  window.addEventListener('pointerdown', function(){ if (document.fullscreenElement) kl(); });
+  try { navigator.getGamepads = function(){ return []; }; } catch(e){}
+  var best = 0, done = false;
+  window.__tfProgress = function(p){ if (done) return; if (p > best) best = p; var f = document.getElementById('tf-fill'), t = document.getElementById('tf-pct'); if (f) f.style.width = Math.round(best*100)+'%'; if (t) t.textContent = Math.round(best*100)+'%'; };
+  window.__tfLoaded = function(){ done = true; var el = document.getElementById('tf-load'); if (el) { el.style.opacity = '0'; setTimeout(function(){ el.remove(); }, 700); } };
+  window.addEventListener('DOMContentLoaded', function(){
+    var box = document.createElement('div'); box.id = 'tf-load';
+    box.innerHTML = '<div class="t"><small>THE</small>FOREST</div><div class="sub">Loading - this is a big game, first load takes a while</div><div class="bar"><div class="fill" id="tf-fill"></div></div><div class="pct" id="tf-pct">0%</div>';
+    document.body.appendChild(box);
+  });
+})();
+</script>
+</head>
+  <body>
+    <div id="unity-container" class="unity-desktop">
+      <canvas id="unity-canvas" width=1280 height=720 tabindex="-1"></canvas>
+      <div id="unity-loading-bar">
+        <div id="unity-logo"></div>
+        <div id="unity-progress-bar-empty">
+          <div id="unity-progress-bar-full"></div>
+        </div>
+      </div>
+      <div id="unity-warning"> </div>
+      <div id="unity-footer">
+        <div id="unity-logo-title-footer"></div>
+        <div id="unity-fullscreen-button"></div>
+        <div id="unity-build-title">The Forest</div>
+      </div>
+    </div>
+    <script>
+      var canvas = document.querySelector("#unity-canvas");
+
+      // Shows a temporary message banner/ribbon for a few seconds, or
+      // a permanent error message on top of the canvas if type=='error'.
+      // If type=='warning', a yellow highlight color is used.
+      // Modify or remove this function to customize the visually presented
+      // way that non-critical warnings and error messages are presented to the
+      // user.
+      function unityShowBanner(msg, type) {
+        var warningBanner = document.querySelector("#unity-warning");
+        function updateBannerVisibility() {
+          warningBanner.style.display = warningBanner.children.length ? 'block' : 'none';
+        }
+        var div = document.createElement('div');
+        div.innerHTML = msg;
+        warningBanner.appendChild(div);
+        if (type == 'error') div.style = 'background: red; padding: 10px;';
+        else {
+          if (type == 'warning') div.style = 'background: yellow; padding: 10px;';
+          setTimeout(function() {
+            warningBanner.removeChild(div);
+            updateBannerVisibility();
+          }, 5000);
+        }
+        updateBannerVisibility();
+      }
+
+      var buildUrl = "Build";
+      var loaderUrl = buildUrl + "/build_web.loader.js";
+      var config = {
+        arguments: [],
+        dataUrl: buildUrl + "/build_web.data",
+        frameworkUrl: buildUrl + "/build_web.framework.js",
+        codeUrl: buildUrl + "/build_web.wasm",
+        symbolsUrl: buildUrl + "/build_web.symbols.json",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "Port",
+        productName: "The Forest",
+        productVersion: "1.0",
+        showBanner: unityShowBanner,
+        // errorHandler: function(err, url, line) {
+        //    alert("error " + err + " occurred at line " + line);
+        //    // Return 'true' if you handled this error and don't want Unity
+        //    // to process it further, 'false' otherwise.
+        //    return true;
+        // },
+      };
+
+      // By default, Unity keeps WebGL canvas render target size matched with
+      // the DOM size of the canvas element (scaled by window.devicePixelRatio)
+      // Set this to false if you want to decouple this synchronization from
+      // happening inside the engine, and you would instead like to size up
+      // the canvas DOM size and WebGL render target sizes yourself.
+      // config.matchWebGLToCanvasSize = false;
+
+      // If you would like all file writes inside Unity Application.persistentDataPath
+      // directory to automatically persist so that the contents are remembered when
+      // the user revisits the site the next time, uncomment the following line:
+      // config.autoSyncPersistentDataPath = true;
+      // This autosyncing is currently not the default behavior to avoid regressing
+      // existing user projects that might rely on the earlier manual
+      // JS_FileSystem_Sync() behavior, but in future Unity version, this will be
+      // expected to change.
+
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        // Mobile device style: fill the whole browser client area with the game canvas:
+
+        var meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes';
+        document.getElementsByTagName('head')[0].appendChild(meta);
+        document.querySelector("#unity-container").className = "unity-mobile";
+        canvas.className = "unity-mobile";
+
+        // To lower canvas resolution on mobile devices to gain some
+        // performance, uncomment the following line:
+        // config.devicePixelRatio = 1;
+
+
+      } else {
+        // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
+        canvas.style.width = "1280px";
+        canvas.style.height = "720px";
+      }
+
+      document.querySelector("#unity-loading-bar").style.display = "block";
+
+      var script = document.createElement("script");
+      script.src = loaderUrl;
+      script.onload = () => {
+        createUnityInstance(canvas, config, (progress) => {
+          document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%"; if (window.__tfProgress) window.__tfProgress(progress);
+              }).then((unityInstance) => {
+                window.unityInstance = unityInstance; if (window.__tfLoaded) window.__tfLoaded();
+                document.querySelector("#unity-loading-bar").style.display = "none";
+                document.querySelector("#unity-fullscreen-button").onclick = () => {
+                  unityInstance.SetFullscreen(1);
+                };
+
+              }).catch((message) => {
+                alert(message);
+              });
+            };
+
+      document.body.appendChild(script);
+
+    </script>
+  <div id="tf-dbg" style="display:none;position:fixed;left:0;right:0;bottom:0;max-height:55vh;overflow:auto;z-index:200;background:rgba(0,0,0,.88);color:#cfd2c4;font:11px/1.35 Consolas,monospace;padding:6px 8px;white-space:pre-wrap"></div>
+<script>
+(function(){
+  var box=document.getElementById('tf-dbg'), on=false, filt=/error|exception|corrupt|invalid|missing|null|fail|warn/i;
+  function render(){ if(!on) return; var NL=String.fromCharCode(10); var all=window.__uniqOrder; var st=all.filter(function(k){return /PortStatus|PortLoad|PortBundleTest|PortBig|PortAnim|PortFix|PortCmd|PortEvt/.test(window.__uniq[k].m)}).slice(-14).map(function(k){return window.__uniq[k].m.slice(0,520)}); var keys=all.filter(function(k){var m=window.__uniq[k].m;return filt.test(m)&&!/Translation|cursor|OnLevelWasLoaded|PortStatus|PortLoad|PortBundleTest|PortBig|PortAnim|PortFix|PortCmd|PortEvt|deprecated|persistentDataPath/.test(m)}); var show=keys.slice(-30).map(function(k){var u=window.__uniq[k];return (u.n>1?'['+u.n+'x] ':'')+u.m.split(NL).slice(0,4).join(' | ').slice(0,260)}); box.textContent='F8 = hide  |  '+keys.length+' distinct problems (newest 30 shown)'+NL+NL+'NEWEST STATUS:'+NL+st.join(NL)+NL+'----'+NL+show.join(NL); box.scrollTop=box.scrollHeight; }
+  window.addEventListener('keydown',function(e){ if(e.key==='F8'){ e.preventDefault(); on=!on; box.style.display=on?'block':'none'; render(); } });
+  setInterval(render,1000);
+})();
+</script>
+<script>window.addEventListener('pointerdown', function(){ var c = document.getElementById('unity-canvas'); if (c) c.focus(); });</script></body>
+</html>
